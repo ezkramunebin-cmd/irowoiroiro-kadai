@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>大学キャンパス 3D屋内マップ開発</title>
+
+    <!-- 1. Mapbox GL JS の公式スタイルシート（地図の見た目を整えるCSS） -->
+    <link href="https://api.mapbox.com/mapbox-gl-js/v3.1.2/mapbox-gl.css" rel="stylesheet">
+
+    <style>
+        /* 画面全体に地図をいっぱいに表示するためのスタイル設定 */
+        body {
+            margin: 0;
+            padding: 0;
+        }
+
+        #map {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 100%;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- 2. 地図を表示するための「器（コンテナ）」となる要素 -->
+    <div id="map"></div>
+
+    <!-- 3. Mapbox GL JS の公式JavaScriptライブラリ -->
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.1.2/mapbox-gl.js"></script>
+
+    <!-- 大学の道データ（JavaScript変数としてロード） -->
+    <script src="campus-data.js"></script>
+
+    <script>
+        // ==========================================================
+        // 【設定1】Mapboxのアクセストークンを入力
+        // Mapboxのアカウントページで取得した「pk.〜」から始まる文字列を入れてください。
+        // ==========================================================
+        mapboxgl.accessToken = 'pk.eyJ1Ijoia2FrYW8zIiwiYSI6ImNtcGduYndrZzBvMHkycG9nYWE3dWttNXUifQ.0l7vf63Lq2vQtbs6m_OOOA';
+
+        // 地図の初期化処理
+        const map = new mapboxgl.Map({
+            container: 'map', // 地図を表示するHTMLのidを指定
+
+            // ==========================================================
+            // 【設定2】地図のスタイル（デザイン）を選択
+            // 建物や室内を立体（3D）で表現する「fill-extrusion」を使う場合は、
+            // 3Dの建物データがあらかじめ含まれている「mapbox://styles/mapbox/streets-v12」や
+            // 航空写真ベースの「mapbox://styles/mapbox/satellite-streets-v12」がおすすめです。
+            // ==========================================================
+            style: 'mapbox://styles/mapbox/streets-v12',
+
+            // ==========================================================
+            // 【設定3】初期位置の座標（経度、緯度）を指定
+            // ※注意※ Mapboxでは「【経度（東経）】, 【緯度（北緯）】」の順番で書きます。
+            // 例：東京駅周辺なら [139.7670, 35.6812]
+            // ここをご自身の大学キャンパスの座標に書き換えてください。
+            // ==========================================================
+            center: [135.78205095468792, 35.04992060384347],
+
+            zoom: 17,     // 初期ズームレベル（大きいほど拡大。キャンパスなら16〜17付近が見やすいです）
+            pitch: 45,    // 地図を傾ける角度（0で真上から、最大85度。3Dに見せるために最初から45度傾けています）
+            bearing: 0    // 地図の向き（0で北が上。回転させたい場合は角度（0〜360）を入れます）
+        });
+
+        // 地図の右上に、拡大・縮小・方位のリセットができる標準コントロール（ボタン）を追加
+        map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+
+        // 【追加】現在地を表示するためのコントロールを追加（GPS・位置情報を使用）
+        const geolocate = new mapboxgl.GeolocateControl({
+            positionOptions: {
+                enableHighAccuracy: true // スマホのGPSなど、できるだけ高精度な位置情報を要求
+            },
+            trackUserLocation: true, // ユーザーの移動に合わせて現在地を追跡する
+            showUserHeading: true    // スマホの向いている方向を扇形で表示する
+        });
+        map.addControl(geolocate, 'top-right');
+
+        // 地図が正常に読み込まれたら動く処理（確認用）
+        map.on('load', () => {
+            
+            // 地図読み込み完了と同時に、自動的に現在地ボタンを押した状態にする
+            geolocate.trigger();
+
+            // 既存の建物レイヤーを探して3D化する
+            // mapboxのstreetsスタイルでは、建物のレイヤーIDは通常 'building' です
+            map.addLayer({
+                'id': '3d-buildings',
+                'source': 'composite', // Mapbox標準の地図ソース
+                'source-layer': 'building', // 建物データのレイヤー名
+                'filter': ['==', 'extrude', 'true'],
+                'type': 'fill-extrusion', // これが3D表示の指定
+                'minzoom': 15, // 拡大した時に表示する設定
+                'paint': {
+                    'fill-extrusion-color': '#aaa', // 建物の色
+                    'fill-extrusion-height': [      // 建物の高さ
+                        'get',
+                        'height'
+                    ],
+                    'fill-extrusion-base': [        // 建物の底面（階数切り替えでここを操作します）
+                        'get',
+                        'min_height'
+                    ],
+                    'fill-extrusion-opacity': 0.8   // 少し透けさせておしゃれに
+                }
+            });
+
+            // 1. 入り口のデータ（GeoJSON形式）を作成
+            // ここに複数の入り口の座標を好きなだけ追加できます
+            const entrancesData = {
+                'type': 'FeatureCollection',
+                'features': [
+                    {
+                        'type': 'Feature',
+                        'properties': {
+                            'description': '東三号館 正面入り口',
+                            'url': 'https://www.kit.ac.jp/uni_index/campus-map/',
+                            'urlText': 'キャンパスマップ'
+
+                        },
+                        'geometry': {
+                            'type': 'Point',
+                            'coordinates': [135.78260021063898,
+                                35.049943420980725] // 【重要】入り口1の座標
+                        }
+                    },
+                    {
+                        'type': 'Feature',
+                        'properties': {
+                            'description': '図書館　入口'
+                        },
+                        'geometry': {
+                            'type': 'Point',
+                            'coordinates': [135.78348130519657, 35.050001035230096] // 【重要】入り口2の座標（例）
+                        }
+                    },
+                    {
+                        'type': 'Feature',
+                        'properties': {
+                            'description': '東一号館 正面入り口'
+                        },
+                        'geometry': {
+                            'type': 'Point',
+                            'coordinates': [135.7833823294308, 35.0496539413757] // 【重要】入り口1の座標
+                        }
+                    },
+                    {
+                        'type': 'Feature',
+                        'properties': {
+                            'description': '東三号館 正面入り口'
+                        },
+                        'geometry': {
+                            'type': 'Point',
+                            'coordinates': [135.7829518348836, 35.04998440904457] // 【重要】入り口1の座標
+                        }
+                    },
+                    {
+                        'type': 'Feature',
+                        'properties': {
+                            'description': '三号館 正面入り口'
+                        },
+                        'geometry': {
+                            'type': 'Point',
+                            'coordinates': [135.7820315690659, 35.04883520498106] // 【重要】入り口1の座標
+                        }
+                    },
+
+                    // 必要に応じて、ここに同じ形式で入り口を追加していきます
+                ]
+            };
+
+            // 2. 地図にソース（データ）を追加
+            map.addSource('entrances', {
+                'type': 'geojson',
+                'data': entrancesData
+            });
+            // 1. 建物名データの準備
+            const buildingNamesData = {
+                'type': 'FeatureCollection',
+                'features': [
+                    {
+                        'type': 'Feature',
+                        'properties': { 'name': '東三号館' }, // ここに名前を入力
+                        'geometry': {
+                            'type': 'Point',
+                            'coordinates': [135.7826436583576, 35.050056081164655] // 建物の中心座標
+                        }
+                    },
+                    {
+                        'type': 'Feature',
+                        'properties': { 'name': '図書館' }, // 名前
+                        'geometry': {
+                            'type': 'Point',
+                            'coordinates': [135.783469501224, 35.050090904983406] // その建物の座標（経度, 緯度）
+                        }
+                    },
+                    {
+                        'type': 'Feature',
+                        'properties': { 'name': '東一号館' }, // 名前
+                        'geometry': {
+                            'type': 'Point',
+                            'coordinates': [135.78328091870782, 35.049500227186705] // その建物の座標（経度, 緯度）
+                        }
+                    },
+                    {
+                        'type': 'Feature',
+                        'properties': { 'name': '東二号館' }, // 名前
+                        'geometry': {
+                            'type': 'Point',
+                            'coordinates': [135.78392766209893, 35.049546807274055] // その建物の座標（経度, 緯度）
+                        }
+                    },
+                    {
+                        'type': 'Feature',
+                        'properties': { 'name': '60周年記念館' }, // 名前
+                        'geometry': {
+                            'type': 'Point',
+                            'coordinates': [135.7826702108722, 35.049528175244056] // その建物の座標（経度, 緯度）
+                        }
+                    },
+                    {
+                        'type': 'Feature',
+                        'properties': { 'name': '東四号館' }, // 名前
+                        'geometry': {
+                            'type': 'Point',
+                            'coordinates': [135.78287694116437, 35.050079371053144] // その建物の座標（経度, 緯度）
+                        }
+                    },
+                    {
+                        'type': 'Feature',
+                        'properties': { 'name': '保健管理センター' }, // 名前
+                        'geometry': {
+                            'type': 'Point',
+                            'coordinates': [135.78409482107813, 35.04985731429779] // その建物の座標（経度, 緯度）
+                        }
+                    },
+                    {
+                        'type': 'Feature',
+                        'properties': { 'name': '一号館' }, // 名前
+                        'geometry': {
+                            'type': 'Point',
+                            'coordinates': [135.78192664023084, 35.05003515140447] // その建物の座標（経度, 緯度）
+                        }
+                    },
+                    {
+                        'type': 'Feature',
+                        'properties': { 'name': '二号館　北棟' }, // 名前
+                        'geometry': {
+                            'type': 'Point',
+                            'coordinates': [135.78145124544622, 35.050306673510285] // その建物の座標（経度, 緯度）
+                        }
+                    },
+                    {
+                        'type': 'Feature',
+                        'properties': { 'name': '二号館　南棟' }, // 名前
+                        'geometry': {
+                            'type': 'Point',
+                            'coordinates': [135.78129278051802, 35.0498843054001] // その建物の座標（経度, 緯度）
+                        }
+                    },
+                    {
+                        'type': 'Feature',
+                        'properties': { 'name': '三号館' }, // 名前
+                        'geometry': {
+                            'type': 'Point',
+                            'coordinates': [135.7819244178494, 35.04882048818896] // その建物の座標（経度, 緯度）
+                        }
+                    },
+                    {
+                        'type': 'Feature',
+                        'properties': { 'name': '五号館' }, // 名前
+                        'geometry': {
+                            'type': 'Point',
+                            'coordinates': [135.78111870451406, 35.04905388750132] // その建物の座標（経度, 緯度）
+                        }
+                    },
+                    {
+                        'type': 'Feature',
+                        'properties': { 'name': '四号館' }, // 名前
+                        'geometry': {
+                            'type': 'Point',
+                            'coordinates': [135.78123172148403, 35.04856704504214] // その建物の座標（経度, 緯度）
+                        }
+                    },
+                    {
+                        'type': 'Feature',
+                        'properties': { 'name': '情報基盤センター' }, // 名前
+                        'geometry': {
+                            'type': 'Point',
+                            'coordinates': [135.78115343422317, 35.04883928206744] // その建物の座標（経度, 緯度）
+                        }
+                    },
+                    {
+                        'type': 'Feature',
+                        'properties': { 'name': '七号館' }, // 名前
+                        'geometry': {
+                            'type': 'Point',
+                            'coordinates': [135.78067574141875, 35.04902225925704] // その建物の座標（経度, 緯度）
+                        }
+                    },
+                    {
+                        'type': 'Feature',
+                        'properties': { 'name': '八号館' }, // 名前
+                        'geometry': {
+                            'type': 'Point',
+                            'coordinates': [135.7803667749718, 35.048753175012834] // その建物の座標（経度, 緯度）
+                        }
+                    },
+                    {
+                        'type': 'Feature',
+                        'properties': { 'name': '六号館' }, // 名前
+                        'geometry': {
+                            'type': 'Point',
+                            'coordinates': [135.780638490145, 35.04855225819907] // その建物の座標（経度, 緯度）
+                        }
+                    },
+                    {
+                        'type': 'Feature',
+                        'properties': { 'name': '九号館' }, // 名前
+                        'geometry': {
+                            'type': 'Point',
+                            'coordinates': [135.78073052270364, 35.04878008347713] // その建物の座標（経度, 緯度）
+                        }
+                    },
+                ]
+            };
+
+            // 2. ソースに追加
+            map.addSource('building-names', {
+                'type': 'geojson',
+                'data': buildingNamesData
+            });
+
+            // 3. レイヤーに追加（文字を表示する設定）
+            map.addLayer({
+                'id': 'building-labels',
+                'type': 'symbol',
+                'source': 'building-names',
+                'layout': {
+                    'text-field': ['get', 'name'], // 表示するプロパティを指定
+                    'text-size': 14,               // 文字の大きさ
+                    'text-offset': [0, 1],       // ピンの下に文字をずらす
+                    'text-anchor': 'top'
+                },
+                'paint': {
+                    'text-color': '#000000',       // 文字の色
+                    'text-halo-color': '#ffffff',  // 文字の周りの縁取り（見やすくするため）
+                    'text-halo-width': 2
+                }
+            });
+
+            // --- 大学の道・歩道の追加表示 ---
+            // 1. 道路・通路のGeoJSONソース（JavaScript変数から読み込み）を追加
+            map.addSource('campus-roads', {
+                'type': 'geojson',
+                'data': campusRoadsData
+            });
+
+            // 2. 道路の下地（白枠のケーシング）レイヤーを追加（視認性を向上させるため）
+            map.addLayer({
+                'id': 'campus-roads-casing',
+                'type': 'line',
+                'source': 'campus-roads',
+                'layout': {
+                    'line-join': 'round',
+                    'line-cap': 'round'
+                },
+                'paint': {
+                    'line-color': '#ffffff',
+                    'line-width': [
+                        'match',
+                        ['get', 'highway'],
+                        'service', 5.5,
+                        'tertiary', 6.5,
+                        3.5 // footway, pedestrian, steps などの標準幅の余白
+                    ],
+                    'line-opacity': 0.8
+                }
+            }, '3d-buildings'); // 3D建物の下に描画
+
+            // 3. 車道・管理用道路（実線）レイヤーを追加
+            map.addLayer({
+                'id': 'campus-roads-solid',
+                'type': 'line',
+                'source': 'campus-roads',
+                'filter': ['in', ['get', 'highway'], 'service', 'tertiary'],
+                'layout': {
+                    'line-join': 'round',
+                    'line-cap': 'round'
+                },
+                'paint': {
+                    'line-color': [
+                        'match',
+                        ['get', 'highway'],
+                        'service', '#708090', // スレートグレー
+                        '#4B5563'             // 濃いグレー（tertiary）
+                    ],
+                    'line-width': [
+                        'match',
+                        ['get', 'highway'],
+                        'service', 3.0,
+                        4.0 // tertiary
+                    ],
+                    'line-opacity': 0.9
+                }
+            }, '3d-buildings');
+
+            // 4. 歩行者通路（点線）レイヤーを追加（美しいスカイブルー）
+            map.addLayer({
+                'id': 'campus-paths-dashed',
+                'type': 'line',
+                'source': 'campus-roads',
+                'filter': ['in', ['get', 'highway'], 'footway', 'pedestrian'],
+                'layout': {
+                    'line-join': 'round',
+                    'line-cap': 'round'
+                },
+                'paint': {
+                    'line-color': '#0EA5E9', // モダンなスカイブルー
+                    'line-width': 1.8,
+                    'line-dasharray': [3, 3], // 歩行者用点線
+                    'line-opacity': 0.95
+                }
+            }, '3d-buildings');
+
+            // 5. 階段（短い点線）レイヤーを追加
+            map.addLayer({
+                'id': 'campus-paths-steps',
+                'type': 'line',
+                'source': 'campus-roads',
+                'filter': ['==', ['get', 'highway'], 'steps'],
+                'layout': {
+                    'line-join': 'round',
+                    'line-cap': 'round'
+                },
+                'paint': {
+                    'line-color': '#0EA5E9', // 歩行者通路と同じスカイブルー
+                    'line-width': 1.8,
+                    'line-dasharray': [1, 1.5], // 階段用の非常に短い間隔の点線
+                    'line-opacity': 0.95
+                }
+            }, '3d-buildings');
+
+            // 3. 地図にレイヤー（見た目）を追加
+            map.addLayer({
+                'id': 'entrances-circle',
+                'type': 'circle',
+                'source': 'entrances', // さっき追加したソースを指定
+                'paint': {
+                    'circle-radius': 6,            // 円の大きさ（半径）
+                    'circle-color': '#ffffff',     // 円の色（白）
+                    'circle-stroke-width': 2,      // 枠線の太さ
+                    'circle-stroke-color': '#FF0000', // 枠線の色（赤。大学のカラーなどに）
+                    'circle-opacity': 0.8          // 少し透けさせる
+                }
+            });
+
+            // --- 【追加】指定の順番でクリックされた時に表示する線のソースとレイヤー ---
+            map.addSource('custom-route', {
+                'type': 'geojson',
+                'data': {
+                    'type': 'Feature',
+                    'properties': {},
+                    'geometry': {
+                        'type': 'LineString',
+                        'coordinates': [] // 初期状態は空
+                    }
+                }
+            });
+
+            map.addLayer({
+                'id': 'custom-route-line',
+                'type': 'line',
+                'source': 'custom-route',
+                'layout': {
+                    'line-join': 'round',
+                    'line-cap': 'round'
+                },
+                'paint': {
+                    'line-color': '#0066ff', // 分かりやすい鮮やかな青色
+                    'line-width': 5,
+                    'line-opacity': 0.8
+                }
+            });
+
+            let lastClickedEntrance = null; // 最後にクリックした入り口を記録する変数
+
+            // --- 【追加】クリックした時にポップアップを表示する処理 ---
+
+            // レイヤー（entrances-circle）をクリックした時のイベント
+            // --- クリックした時にポップアップを表示する処理（URL対応版） ---
+            map.on('click', 'entrances-circle', (e) => {
+                const coordinates = e.features[0].geometry.coordinates.slice();
+                const props = e.features[0].properties; // propsにまとめて代入すると書きやすいです
+
+                // --- 順番クリックによる経路表示ロジック ---
+                if (props.description === '東一号館 正面入り口') {
+                    // 東一号館がクリックされたら記録し、線を消す
+                    lastClickedEntrance = '東一号館 正面入り口';
+                    map.getSource('custom-route').setData({
+                        'type': 'Feature',
+                        'properties': {},
+                        'geometry': { 'type': 'LineString', 'coordinates': [] }
+                    });
+                } else if (props.description === '三号館 正面入り口' && lastClickedEntrance === '東一号館 正面入り口') {
+                    // 東一号館の次に三号館がクリックされた場合、指定の経由地を通る線を引く
+                    map.getSource('custom-route').setData({
+                        'type': 'Feature',
+                        'properties': {},
+                        'geometry': {
+                            'type': 'LineString',
+                            'coordinates': [
+                                [135.7833823294308, 35.0496539413757],  // 東一号館 正面入り口
+                                [135.78337012097464, 35.04969107319422],
+                                [135.78274755973533, 35.04967864240259],
+                                [135.78267992004413, 35.04970237391224],
+                                [135.78244663212962, 35.04970463405567], // 経由点1
+                                [135.7821526065332, 35.049726105415026],
+                                [135.78212499849639, 35.04902206789444],
+                                [135.78208220603884, 35.04896104348632],
+                                [135.7820315690659, 35.04883520498106]   // 三号館 正面入り口
+                            ]
+                        }
+                    });
+                    lastClickedEntrance = null; // リセット
+                } else {
+                    // その他の場合は記録をリセットし、線を消す
+                    lastClickedEntrance = props.description;
+                    map.getSource('custom-route').setData({
+                        'type': 'Feature',
+                        'properties': {},
+                        'geometry': { 'type': 'LineString', 'coordinates': [] }
+                    });
+                }
+
+                // ポップアップの中身を作成
+                // props.description や props.url は、GeoJSONのプロパティ名と合わせる必要があります
+                let htmlContent = `<div><strong>${props.description || '詳細情報'}</strong></div>`;
+
+                // URLがあればリンクを追加
+                if (props.url) {
+                    // 'urlText' が設定されていればその文字を、なければ「ウェブサイトを開く」を使用
+                    const linkText = props.urlText || 'ウェブサイトを開く';
+                    htmlContent += `<br><a href="${props.url}" target="_blank" rel="noopener noreferrer">${linkText}</a>`;
+                }
+
+                new mapboxgl.Popup()
+                    .setLngLat(coordinates)
+                    .setHTML(htmlContent)
+                    .addTo(map);
+            });
+
+            // カーソルの変更処理（そのまま残しておいてOK）
+            map.on('mouseenter', 'entrances-circle', () => {
+                map.getCanvas().style.cursor = 'pointer';
+            });
+            map.on('mouseleave', 'entrances-circle', () => {
+                map.getCanvas().style.cursor = '';
+            });
+
+            // --- 3D建物の動的色付け処理の追加 ---
+            const targetBuildings = {
+                '3号館': {
+                    coord: [135.7819244178494, 35.04882048818896],
+                    color: '#4ade80' // グリーン
+                },
+                '4号館': {
+                    coord: [135.78123172148403, 35.04856704504214],
+                    color: '#38bdf8' // ブルー（スカイブルー）
+                },
+                '5号館': {
+                    coord: [135.78111870451406, 35.04905388750132],
+                    color: '#e85299' // ピンク
+                },
+                '図書館': {
+                    coord: [135.783469501224, 35.050090904983406],
+                    color: '#ff0000' // ピンク
+                },
+                '東一号館': {
+                    coord: [135.7832737496632, 35.04952028220888],
+                    color: '#9370db' // ミディアムパープル
+                },
+
+
+
+            };
+
+            const coloredBuildingIds = {};
+
+            function updateBuildingColors() {
+                let updated = false;
+                for (const name in targetBuildings) {
+                    if (coloredBuildingIds[name]) continue;
+
+                    const item = targetBuildings[name];
+                    const point = map.project(item.coord);
+
+                    // 座標の周囲10ピクセルの範囲の3D建物を検索
+                    const bbox = [
+                        [point.x - 5, point.y - 5],
+                        [point.x + 5, point.y + 5]
+                    ];
+
+                    const features = map.queryRenderedFeatures(bbox, {
+                        layers: ['3d-buildings']
+                    });
+
+                    if (features.length > 0) {
+                        const feature = features[0];
+                        // フィーチャID、またはプロパティ内のid/osm_idを検出
+                        const id = feature.id || feature.properties.id || feature.properties.osm_id;
+                        if (id) {
+                            coloredBuildingIds[name] = id;
+                            updated = true;
+                            console.log(`Found building ${name} with feature ID: ${id}`);
+                        }
+                    }
+                }
+
+                if (updated) {
+                    // 色分け用の条件式を構築
+                    const colorExpr = ['case'];
+
+                    for (const name in targetBuildings) {
+                        const id = coloredBuildingIds[name];
+                        if (id !== undefined) {
+                            const condition = [
+                                'any',
+                                ['==', ['to-string', ['id']], String(id)],
+                                ['==', ['to-string', ['get', 'id']], String(id)],
+                                ['==', ['to-string', ['get', 'osm_id']], String(id)]
+                            ];
+
+                            colorExpr.push(condition, targetBuildings[name].color);
+                        }
+                    }
+
+                    colorExpr.push('#aaa'); // その他の建物のデフォルトカラー
+
+                    map.setPaintProperty('3d-buildings', 'fill-extrusion-color', colorExpr);
+                }
+            }
+
+            // タイルデータ読み込み完了時やカメラ移動完了時のアイドル時に判定を実行
+            map.on('idle', updateBuildingColors);
+        });
+
+
+    </script>
+</body>
+
+</html>
