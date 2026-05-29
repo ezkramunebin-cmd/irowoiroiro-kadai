@@ -525,6 +525,14 @@
                             'coordinates': [135.77983128951647, 35.0503832654799] // その建物の座標（経度, 緯度）
                         }
                     },
+                    {
+                        'type': 'Feature',
+                        'properties': { 'name': '北部講義室棟' }, // 名前, 
+                        'geometry': {
+                            'type': 'Point',
+                            'coordinates': [135.78088, 35.05035] // その建物の座標（経度, 緯度）
+                        }
+                    },
                 ]
             };
 
@@ -731,6 +739,26 @@
                         }
                     });
                     lastClickedEntrance = null; // リセット
+                } else if (props.description === '12号館入り口' && lastClickedEntrance === '東1号館 正面入り口') {
+                    // 東1号館の次に12号館入り口がクリックされた場合
+                    map.getSource('custom-route').setData({
+                        'type': 'Feature',
+                        'properties': {},
+                        'geometry': {
+                            'type': 'LineString',
+                            'coordinates': [
+                                [135.7833823294308, 35.0496539413757],   // 東1号館 正面入り口 (出発地)
+                                [135.78337012097464, 35.04969107319422],
+                                [135.78274755973533, 35.04967864240259],
+                                [135.78267992004413, 35.04970237391224],
+                                [135.78080615348304, 35.04970760438182],
+                                [135.78078461417732, 35.05003585193014],
+                                [135.7802897173594, 35.05003072347833],
+                                [135.78026759050283, 35.04996141095993]
+                            ]
+                        }
+                    });
+                    lastClickedEntrance = null; // リセット
                 } else {
                     // その他の場合は記録をリセットし、線を消す
                     lastClickedEntrance = props.description;
@@ -916,6 +944,10 @@
                     coord: [135.7794113633989, 35.04948238035266],
                     color: '#fd8c74' // 薄赤, , 135.7794113633989
                 },
+                '北部講義室棟(NP)': {
+                    coord: [135.7809655131546, 35.050355296382286],
+                    color: '#8be464' // ミントグリーン, , 
+                },
 
 
 
@@ -988,13 +1020,16 @@
 
             // --- 部屋検索機能の追加 ---
             const roomData = [
-                { name: 'E111', building: '東3号館', floor: 1, coordinates: [135.7826, 35.0500], url: 'https://www.kit.ac.jp/uni_index/campus-map/' }, // URLを追加
-                { name: '0331', building: '3号館', floor: 1, coordinates: [135.7819244178494, 35.04882048818896] },
-                { name: '学生課', building: 'センターホール', floor: 1, coordinates: [135.7820, 35.0495] },
-                { name: '食堂', building: '大学会館', floor: 1, coordinates: [135.7798, 35.0485] },
-                { name: 'Kit shop', building: 'kit shop', floor: 1, coordinates: [135.7807, 35.0488] },
-                { name: '0322', building: '3号館', floor: 2, coordinates: [135.7819244178494, 35.04882048818896] },
+                { name: 'E111', building: '東3号館', floor: 1, coordinates: [135.7826, 35.0500] }, // urlに画像パスを指定
+                { name: '0311', building: '3号館', floor: 1, coordinates: [135.7819244178494, 35.04882048818896], url: '/Users/fukudakako/Downloads/1DEB4A70-6018-4300-A429-02853C4C4BF1.PNG', urlText: '0311' },
+                { name: '0322', building: '3号館', floor: 2, coordinates: [135.7819244178494, 35.04882048818896], url: '/Users/fukudakako/Downloads/1DEB4A70-6018-4300-A429-02853C4C4BF1.PNG', urlText: '0322' },
                 { name: 'E121', building: '東3号館', floor: 2, coordinates: [135.7826, 35.0500] },
+                { name: '0312', building: '3号館', floor: 1, coordinates: [135.7819244178494, 35.04882048818896], url: '/Users/fukudakako/Downloads/1DEB4A70-6018-4300-A429-02853C4C4BF1.PNG', urlText: '0312' },
+                { name: '0321', building: '3号館', floor: 2, coordinates: [135.7819244178494, 35.04882048818896], url: '/Users/fukudakako/Downloads/1DEB4A70-6018-4300-A429-02853C4C4BF1.PNG', urlText: '0321' },
+                { name: '0323', building: '3号館', floor: 2, coordinates: [135.7819244178494, 35.04882048818896], url: '/Users/fukudakako/Downloads/1DEB4A70-6018-4300-A429-02853C4C4BF1.PNG', urlText: '0323' },
+                { name: '0331', building: '3号館', floor: 3, coordinates: [135.7819244178494, 35.04882048818896], url: '/Users/fukudakako/Downloads/1DEB4A70-6018-4300-A429-02853C4C4BF1.PNG', urlText: '0331' },
+                { name: 'NP21', building: '北部講義室棟', floor: 2, coordinates: [135.78087980413045, 35.050353864433546] },
+
             ];
 
             const searchInput = document.getElementById('search-input');
@@ -1036,16 +1071,19 @@
                                 essential: true
                             });
 
-                            // ポップアップの中身を作成（URLがある場合はリンクにする）
-                            let roomNameHtml = `<strong>${room.name}</strong>`;
+                            // ポップアップの中身を作成
+                            let roomNameHtml = `<strong>${room.name}</strong><br>${room.building} ${room.floor}F`;
+
+                            // URLがある場合はリンクを追加
                             if (room.url) {
-                                roomNameHtml = `<strong><a href="${room.url}" target="_blank" rel="noopener noreferrer">${room.name}</a></strong>`;
+                                const linkText = room.urlText || '詳細を見る';
+                                roomNameHtml += `<br><a href="${room.url}" target="_blank" rel="noopener noreferrer" style="color: blue; text-decoration: underline;">${linkText}</a>`;
                             }
 
                             // ポップアップを表示
                             new mapboxgl.Popup({ closeOnClick: true, offset: 25 })
                                 .setLngLat(room.coordinates)
-                                .setHTML(`<div>${roomNameHtml}<br>${room.building} ${room.floor}F</div>`)
+                                .setHTML(`<div>${roomNameHtml}</div>`)
                                 .addTo(map);
                         });
 
