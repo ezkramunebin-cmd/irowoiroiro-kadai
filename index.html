@@ -22,10 +22,66 @@
             bottom: 0;
             width: 100%;
         }
+
+        /* 検索機能のスタイル */
+        #search-container {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90%;
+            max-width: 400px;
+            z-index: 10;
+            font-family: sans-serif;
+        }
+
+        #search-input {
+            width: 100%;
+            padding: 12px 20px;
+            font-size: 16px;
+            border: none;
+            border-radius: 25px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            outline: none;
+            box-sizing: border-box;
+        }
+
+        #search-results {
+            margin-top: 5px;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            max-height: 200px;
+            overflow-y: auto;
+            display: none;
+            list-style: none;
+            padding: 0;
+        }
+
+        #search-results li {
+            padding: 12px 20px;
+            border-bottom: 1px solid #f0f0f0;
+            cursor: pointer;
+            color: #333;
+        }
+
+        #search-results li:last-child {
+            border-bottom: none;
+        }
+
+        #search-results li:hover {
+            background-color: #f9f9f9;
+        }
     </style>
 </head>
 
 <body>
+
+    <!-- 部屋検索用コンテナ -->
+    <div id="search-container">
+        <input type="text" id="search-input" placeholder="部屋名や建物を検索（例: 101）">
+        <ul id="search-results"></ul>
+    </div>
 
     <!-- 2. 地図を表示するための「器（コンテナ）」となる要素 -->
     <div id="map"></div>
@@ -187,6 +243,46 @@
                         'geometry': {
                             'type': 'Point',
                             'coordinates': [135.78149484378807, 35.049057965069366] // 【重要】入り口1の座標
+                        }
+                    },
+                    {
+                        'type': 'Feature',
+                        'properties': {
+                            'description': '8号館入り口'
+                        },
+                        'geometry': {
+                            'type': 'Point',
+                            'coordinates': [135.78027453156628, 35.0488190540024] // 【重要】入り口1の座標
+                        }
+                    },
+                    {
+                        'type': 'Feature',
+                        'properties': {
+                            'description': '12号館入り口'
+                        },
+                        'geometry': {
+                            'type': 'Point',
+                            'coordinates': [135.78026759050283, 35.04996141095993] // 【重要】入り口1の座標
+                        }
+                    },
+                    {
+                        'type': 'Feature',
+                        'properties': {
+                            'description': '12号館裏入り口'
+                        },
+                        'geometry': {
+                            'type': 'Point',
+                            'coordinates': [135.77970736181658, 35.04984566776505] // 【重要】入り口1の座標
+                        }
+                    },
+                    {
+                        'type': 'Feature',
+                        'properties': {
+                            'description': '8号館裏入り口'
+                        },
+                        'geometry': {
+                            'type': 'Point',
+                            'coordinates': [135.78045371130392, 35.04879239812075] // 【重要】入り口1の座標
                         }
                     },
 
@@ -889,6 +985,81 @@
 
             // タイルデータ読み込み完了時やカメラ移動完了時のアイドル時に判定を実行
             map.on('idle', updateBuildingColors);
+
+            // --- 部屋検索機能の追加 ---
+            const roomData = [
+                { name: 'E111', building: '東3号館', floor: 1, coordinates: [135.7826, 35.0500], url: 'https://www.kit.ac.jp/uni_index/campus-map/' }, // URLを追加
+                { name: '0331', building: '3号館', floor: 1, coordinates: [135.7819244178494, 35.04882048818896] },
+                { name: '学生課', building: 'センターホール', floor: 1, coordinates: [135.7820, 35.0495] },
+                { name: '食堂', building: '大学会館', floor: 1, coordinates: [135.7798, 35.0485] },
+                { name: 'Kit shop', building: 'kit shop', floor: 1, coordinates: [135.7807, 35.0488] },
+                { name: '0322', building: '3号館', floor: 2, coordinates: [135.7819244178494, 35.04882048818896] },
+                { name: 'E121', building: '東3号館', floor: 2, coordinates: [135.7826, 35.0500] },
+            ];
+
+            const searchInput = document.getElementById('search-input');
+            const searchResults = document.getElementById('search-results');
+
+            // 検索ボックスの入力イベント
+            searchInput.addEventListener('input', (e) => {
+                const query = e.target.value.trim();
+                searchResults.innerHTML = ''; // リストをクリア
+
+                if (query.length === 0) {
+                    searchResults.style.display = 'none';
+                    return;
+                }
+
+                // 検索クエリでフィルタリング（大文字小文字を区別しない）
+                const lowerQuery = query.toLowerCase();
+                const filtered = roomData.filter(room =>
+                    room.name.toLowerCase().includes(lowerQuery) ||
+                    room.building.toLowerCase().includes(lowerQuery)
+                );
+
+                if (filtered.length > 0) {
+                    searchResults.style.display = 'block';
+                    filtered.forEach(room => {
+                        const li = document.createElement('li');
+                        li.textContent = `${room.name} (${room.building} ${room.floor}F)`;
+
+                        // クリック時の処理
+                        li.addEventListener('click', () => {
+                            // 検索結果を閉じる
+                            searchResults.style.display = 'none';
+                            searchInput.value = room.name;
+
+                            // 地図を移動
+                            map.flyTo({
+                                center: room.coordinates,
+                                zoom: 19,
+                                essential: true
+                            });
+
+                            // ポップアップの中身を作成（URLがある場合はリンクにする）
+                            let roomNameHtml = `<strong>${room.name}</strong>`;
+                            if (room.url) {
+                                roomNameHtml = `<strong><a href="${room.url}" target="_blank" rel="noopener noreferrer">${room.name}</a></strong>`;
+                            }
+
+                            // ポップアップを表示
+                            new mapboxgl.Popup({ closeOnClick: true, offset: 25 })
+                                .setLngLat(room.coordinates)
+                                .setHTML(`<div>${roomNameHtml}<br>${room.building} ${room.floor}F</div>`)
+                                .addTo(map);
+                        });
+
+                        searchResults.appendChild(li);
+                    });
+                } else {
+                    searchResults.style.display = 'none';
+                }
+            });
+
+            // 検索ボックス外（地図）をクリックしたらリストを閉じる
+            map.on('click', () => {
+                searchResults.style.display = 'none';
+            });
         });
 
 
